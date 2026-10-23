@@ -97,3 +97,7 @@ data/                  put the CSV here (not tracked by git)
 ## Author
 
 Odysseas Tamvakos, Department of Informatics, University of Piraeus
+
+## License
+
+The code is released under the [MIT License](LICENSE). The dataset belongs to the course and is not included.
