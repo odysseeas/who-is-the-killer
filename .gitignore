@@ -1,0 +1,19 @@
+# Course dataset (not ours to publish)
+data/*
+!data/README.md
+
+# Test-set predictions
+submission.csv
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
