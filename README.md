@@ -8,13 +8,13 @@ Identifying which of 8 serial killers committed each crime, using classical patt
 
 ## The problem
 
-The "Piraeus Vice" dataset has 4,800 crimes. Each crime has the time, place, victim, weather, weapon and scene type, and the solved crimes also have the killer (1–8). The task is to train models on the solved crimes and name the most likely killer for each unsolved one.
+The "Piraeus Vice" dataset has 4,800 crimes. Each crime has the time, place, victim, weather, weapon and scene type, plus the killer (1–8). The task is to learn from known cases and name the most likely killer for new ones.
 
-| Split | Use |
-|---|---|
-| TRAIN | fit the models |
-| VAL | compare the models |
-| TEST | unsolved crimes, predicted at the end |
+| Split | Crimes | Use |
+|---|---|---|
+| TRAIN | 2,636 | fit the models |
+| VAL | 958 | compare the models |
+| TEST | 1,206 | held out, used once at the end |
 
 **Features:** 8 continuous (`hour_float`, `latitude`, `longitude`, `victim_age`, `temp_c`, `humidity`, `dist_precinct_km`, `pop_density`) and 4 categorical (`weapon_code`, `scene_type`, `weather`, `vic_gender`).
 
@@ -23,74 +23,82 @@ The "Piraeus Vice" dataset has 4,800 crimes. Each crime has the time, place, vic
 1. **Exploratory analysis:** class balance, crime locations, feature distributions.
 2. **Gaussian MLE per killer:** mean and covariance of the continuous features for each class.
 3. **Generative vs discriminative models:** Gaussian Naive Bayes, compared with Logistic Regression, an MLP (100 → 50 neurons) and an SVM with an RBF kernel. Continuous features are standardised and categorical ones one-hot encoded, inside scikit-learn pipelines.
-4. **Unsupervised view:** PCA for visualisation, then k-means with k = 8, to see whether the killers form natural clusters without using the labels.
-5. **Final prediction:** the best model is retrained on TRAIN + VAL and predicts the TEST crimes.
+4. **Class imbalance:** the same SVM with balanced class weights, so that mistakes on rare killers cost more.
+5. **Unsupervised view:** PCA for visualisation, then k-means with k = 8, to see whether the killers form natural clusters without using the labels.
+6. **Final evaluation:** the best model is retrained on TRAIN + VAL and scored once on TEST.
 
 ## Results
 
-Validation accuracy (958 crimes):
+Validation set (958 crimes):
 
-| Model | Accuracy |
-|---|---|
-| Gaussian Naive Bayes (continuous features only) | 0.833 |
-| Logistic Regression | 0.943 |
-| MLP (100, 50) | 0.936 |
-| **SVM (RBF kernel)** | **0.947** |
+| Model | Accuracy | Balanced accuracy | Macro F1 |
+|---|---|---|---|
+| Gaussian Naive Bayes (continuous features only) | 0.833 | 0.768 | 0.707 |
+| Logistic Regression | 0.943 | 0.834 | 0.856 |
+| MLP (100, 50) | 0.936 | 0.821 | 0.836 |
+| **SVM (RBF kernel)** | **0.947** | 0.839 | **0.862** |
+| SVM (RBF, balanced weights) | 0.928 | **0.886** | 0.854 |
 
-The discriminative models clearly beat Naive Bayes, and the SVM came out on top. Location turned out to be the most informative feature, because most killers operate in their own area of the city.
+The discriminative models clearly beat Naive Bayes. The plain SVM has the best accuracy and macro F1, so it is the final model.
+
+**On the held-out TEST set** (1,206 crimes), the SVM retrained on TRAIN + VAL reaches **95.6% accuracy** and **0.90 macro F1**.
 
 ### A closer look: accuracy hides the small classes
 
-Killer 3 committed about half of all crimes, so a model can score high accuracy by doing well on killer 3 alone. Per-class recall of the SVM tells a more honest story:
+Killer 3 committed about half of all crimes, so a model can score high accuracy by doing well on killer 3 alone. Per-class recall on the validation set tells a more honest story:
 
-| Killer | Crimes in VAL | Recall |
-|---|---|---|
-| 1 | 17 | 0.88 |
-| 2 | 62 | 1.00 |
-| 3 | 491 | 0.98 |
-| 4 | 45 | 0.76 |
-| 5 | 48 | 0.63 |
-| 6 | 133 | 1.00 |
-| 7 | 143 | 0.99 |
-| 8 | 19 | 0.47 |
+| Killer | Crimes in VAL | SVM | SVM, balanced weights |
+|---|---|---|---|
+| 1 | 17 | 0.88 | 0.88 |
+| 2 | 62 | 1.00 | 0.98 |
+| 3 | 491 | 0.98 | 0.92 |
+| 4 | 45 | **0.76** | **0.87** |
+| 5 | 48 | **0.63** | **0.73** |
+| 6 | 133 | 1.00 | 0.99 |
+| 7 | 143 | 0.99 | 0.97 |
+| 8 | 19 | **0.47** | **0.74** |
 
-- **Macro F1: 0.86** and **balanced accuracy: 0.84**, against 0.95 accuracy.
-- Killer 5 is often mistaken for killer 3, and killer 8 for killers 3 and 5. Their crimes overlap geographically with killer 3's.
+- Killer 5 is often mistaken for killer 3, and killer 8 for killers 3 and 5.
 - Killer 4 is confused with killer 7, the neighbouring group on the map.
+- Balanced class weights find far more of killers 4, 5 and 8 (recall 0.47 → 0.74 for killer 8), at the cost of more mistakes on killer 3. Which model is "better" depends on what matters more: overall accuracy, or not missing the rare killers.
 
 ![SVM confusion matrix](figures/confusion_matrix.png)
+
+### How much does location explain?
+
+An SVM that only sees latitude and longitude reaches 0.80 accuracy but only **0.43 macro F1**, and it never predicts killers 4, 5 or 8. Location separates the killers who work in their own area, such as killer 6, but the other features are what tell apart killers who share a neighbourhood.
 
 ### Unsupervised: do the killers form natural clusters?
 
 ![PCA coloured by true killer and by k-means cluster](figures/pca_kmeans_comparison.png)
 
-k-means finds the geographically isolated killers well (for example killer 6, top right), but it splits the large killer-3 group into several clusters and merges smaller neighbouring groups. So the structure is only partly recoverable without labels. The script measures the match with the Adjusted Rand Index (ARI) and normalised mutual information (NMI).
+k-means finds the isolated groups well, for example killer 6 at the top right. It also splits the large killer-3 group into several clusters and merges neighbouring killers in the south. The match with the true killers is moderate: **ARI = 0.40** and **NMI = 0.58**, where 1 would be a perfect match and 0 random. So the structure is only partly visible without labels.
 
-More figures are in [`figures/`](figures/): class distribution, feature histograms, killer 3's covariance matrix and the PCA scree plot.
+More figures are in [`figures/`](figures/): class distribution, feature histograms, killer 3's covariance matrix and the PCA scree plot. All numbers are in [`figures/results.csv`](figures/results.csv).
 
 ## What I would try next
 
-- `class_weight="balanced"` in the SVM and Logistic Regression, to push recall up for killers 5 and 8.
-- Tuning `C` and `gamma` with stratified cross-validation instead of a single validation split.
-- A location-only baseline, to measure how much the other features actually add.
+- Features built from location, such as the distance from each killer's centre, to help with the overlapping killers.
+- A tree-based model (for example gradient boosting) as a comparison to the SVM.
+- Cross-validation instead of a single validation split. A quick grid search over `C` and `gamma` did not beat the default SVM on the validation set.
 
 ## How to run
 
 ```bash
 pip install -r requirements.txt
-python who_is_the_killer.py data/your_file.csv
+python who_is_the_killer.py data/crimes.csv
 ```
 
-The script saves all figures, a `results.csv` with accuracy, balanced accuracy and macro F1 for every model, and the test predictions (`submission.csv`) to `figures/`. You can choose another folder with `--out`.
+The script prints all the results above. It also saves the figures, `results.csv` and the TEST predictions (`submission.csv`) to `figures/`, or to another folder with `--out`.
 
 **Data:** the dataset was provided by the course and is not included in this repository. See [`data/README.md`](data/README.md) for the expected format.
 
 ## Repository structure
 
 ```
-who_is_the_killer.py   full pipeline: EDA, models, PCA/k-means, predictions
+who_is_the_killer.py   full pipeline: EDA, models, PCA/k-means, evaluation
 requirements.txt       Python dependencies
-figures/               generated plots
+figures/               generated plots and results.csv
 data/                  put the CSV here (not tracked by git)
 ```
 

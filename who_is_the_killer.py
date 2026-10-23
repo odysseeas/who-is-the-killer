@@ -74,6 +74,10 @@ def make_models():
         "SVM (RBF kernel)": make_pipeline(
             make_preprocessor(), SVC(kernel="rbf", random_state=SEED)
         ),
+        # Same SVM, but mistakes on rare killers cost more (weights inverse to class size).
+        "SVM (RBF, balanced weights)": make_pipeline(
+            make_preprocessor(), SVC(kernel="rbf", class_weight="balanced", random_state=SEED)
+        ),
     }
 
 
@@ -187,6 +191,25 @@ def predict_test(train, val, test, model_name, out_dir):
     submission.to_csv(out_dir / "submission.csv", index=False)
     print(f"Saved {len(submission)} predictions to {out_dir / 'submission.csv'}")
 
+    # If the TEST crimes come with their true killer, score the final model once on them.
+    if test[TARGET].notna().all():
+        truth, pred = test[TARGET].astype(int), submission[TARGET]
+        print(f"TEST ({model_name}, trained on TRAIN + VAL): "
+              f"accuracy = {accuracy_score(truth, pred):.4f}, "
+              f"balanced accuracy = {balanced_accuracy_score(truth, pred):.4f}, "
+              f"macro F1 = {f1_score(truth, pred, average='macro'):.4f}")
+
+
+def location_baseline(train, val):
+    """How far do we get with latitude and longitude alone?"""
+    where = ["latitude", "longitude"]
+    model = make_pipeline(ColumnTransformer([("num", StandardScaler(), where)]),
+                          SVC(kernel="rbf", random_state=SEED))
+    model.fit(train[FEATURES], train[TARGET])
+    pred = model.predict(val[FEATURES])
+    print(f"Location-only SVM (VAL): accuracy = {accuracy_score(val[TARGET], pred):.4f}, "
+          f"macro F1 = {f1_score(val[TARGET], pred, average='macro'):.4f}")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -208,6 +231,7 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     exploratory_plots(train, args.out)
     best = evaluate_models(train, val, args.out)
+    location_baseline(train, val)
     unsupervised(train, args.out)
     predict_test(train, val, test, best, args.out)
 

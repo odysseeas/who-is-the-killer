@@ -1,0 +1,6 @@
+Model,Accuracy,Balanced accuracy,Macro F1
+Gaussian Naive Bayes,0.833,0.7676,0.7066
+Logistic Regression,0.9426,0.8343,0.8557
+"MLP (100, 50)",0.9363,0.8214,0.8361
+SVM (RBF kernel),0.9468,0.8389,0.8621
+"SVM (RBF, balanced weights)",0.928,0.886,0.8535
